@@ -1,0 +1,7 @@
+source:
+  url: "https://raw.githubusercontent.com/datasets/football-datasets/main/datasets/premier-league/season-2526.csv"
+  format: csv
+  delimiter: ","
+  header: true
+  encoding: utf-8
+  

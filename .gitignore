@@ -1,0 +1,23 @@
+# Virtual environment
+venv/
+.env
+
+# Python
+__pycache__/
+*.pyc
+
+# Logs
+logs/
+*.log
+
+# Data
+data/raw/
+data/silver/
+data/gold/
+
+# VS Code
+.vscode/
+
+# OS files
+.DS_Store
+Thumbs.db
