@@ -1,30 +1,66 @@
-from src.utils.logger import logger
-
-logger.info("Silver transformation started")
-
 import pandas as pd
 from pathlib import Path 
 pd.set_option('display.max_columns', None)  
 
-BASE_DIR = Path(__file__).resolve().parents[2]
+from src.utils.logger import logger
+from src.extract.extract import load_config, config_path
 
-file_path = BASE_DIR / "data" / "raw" / "raw_data_2526.parquet"
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+raw_file_path = BASE_DIR / "data" / "raw" / "raw_data_2526.parquet"
 silver_data_dir = BASE_DIR / "data" / "silver"
 
 
-df = pd.read_parquet(file_path)
-logger.info("Raw data read successfully")
-logger.info(f"Dataframe shape: {df.shape}")
+def load_raw_data(file_path: Path) -> pd.DataFrame:
+    """
+    Loads the raw football dataset from a parquet file.
 
-def transform_data(df):
-    '''
-    Transforms the raw football data by adding new features and performing calculations.
+    Validates that the source file exists and contains data before returning
+    the dataset for downstream transformations.
+
     Args:
-        df (pd.DataFrame): The raw football data.
+        file_path (Path): Location of the raw parquet dataset.
+
     Returns:
-        pd.DataFrame: The transformed football data.
-    '''
-    logger.info("Starting silver data transformation")
+        pd.DataFrame: Raw football dataset loaded from the specified file.
+
+    Raises:
+        FileNotFoundError: If the source file does not exist.
+    """
+
+    if not file_path.exists():
+        logger.warning(f"{file_path} not found")
+        raise 
+
+    df = pd.read_parquet(file_path)
+
+    if df.empty:
+        logger.warning("Raw dataset is empty")
+    
+    logger.info(f"Raw data read succesfully and contains {df.shape[0]} rows and {df.shape[1]} columns.")
+
+    return df
+    
+
+
+def transform_data(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Enriches raw football match data with derived performance and analytics metrics.
+
+    The function converts date fields to datetime format and creates additional
+    features including total goals, scoring indicators, shot statistics, match
+    points, both-teams-to-score (BTTS) flags, and clean sheet metrics. These
+    derived attributes are used in downstream silver and gold layer analyses.
+
+    Args:
+        df (pd.DataFrame): Raw football match dataset containing match results
+            and performance statistics.
+
+    Returns:
+        pd.DataFrame: Enhanced dataset with calculated football analytics
+        features ready for further processing.
+    """
+    logger.info(f"Starting silver data transformation for {len(df)} match records")
 
     df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
 
@@ -48,23 +84,75 @@ def transform_data(df):
 
     df['AwayCleanSheet'] = df['FTHG'] == 0
 
-    logger.info("Silver data transformation completed successfully")
-    logger.info(f"Transformed dataframe shape: {df.shape}")
+    logger.info(
+    "Created derived features: TotalGoals, IsHighScoring, "
+    "ShotAccuracy, HomePoints, AwayPoints, BTTS, CleanSheet metrics")
+
+    logger.info("Silver data transformation completed successfully. "
+                f"output shape: {df.shape}")
     return df
 
-transformed_df = transform_data(df)
-print(transformed_df.head(10))
 
 
-try:
-    silver_data_dir.mkdir(parents=True, exist_ok=True)
-    logger.info("Silver data directory created successfully")
 
-    silver_file_path = silver_data_dir / "transformed_data_2526.parquet"
-    transformed_df.to_parquet(silver_file_path, index=False)
+def save_silver_transformation(df: pd.DataFrame, file_name: str) -> None:
+    """
+    Persists the transformed dataset to the silver layer.
 
-    logger.info(f"Transformed data saved successfully to: {silver_file_path}")
+    Creates the target directory if it does not already exist and saves the
+    DataFrame as a parquet file. Logs the save operation and any errors
+    encountered during the process.
 
-except Exception as e:
-    logger.error(f"Failed to create silver data directory for parquet file: {e}")
-    raise
+    Args:
+        df (pd.DataFrame): Transformed dataset to be saved.
+        file_name (str): Name of the output parquet file.
+
+    Raises:
+        Exception: Propagates any exception encountered while saving the dataset.
+    """
+
+    try:
+        if df.empty:
+            logger.warning(f"{file_name} is empty. Saving empty dataset")
+
+        silver_data_dir.mkdir(parents=True, exist_ok=True)
+        logger.info("Silver data directory created successfully")
+
+        file_path = silver_data_dir / file_name
+        df.to_parquet(file_path, index=False)
+
+        logger.info(f"Silver data saved successfully to: {file_path}")
+
+    except Exception as e:
+        logger.error(f"Failed to create silver data directory for parquet file: {e}")
+        raise
+
+
+def run_silver_transformation():
+    """
+    Executes the silver-layer transformation pipeline.
+
+    Loads the raw dataset, applies transformation logic, and saves the
+    resulting dataset to the silver layer. Logs the progress and completion
+    of the transformation workflow.
+
+    Returns:
+        None
+    """
+
+    logger.info("Silver transformation started")
+
+    df = load_raw_data(raw_file_path)
+
+    transformed_df = transform_data(df)
+
+    config = load_config(config_path)
+    file_name = config["output"]["silver_file_name"]
+
+    save_silver_transformation(transformed_df, file_name)
+    logger.info((f"Silver transformation saved successfully for {len(transformed_df)} rows"))
+
+
+# commits
+# define function to load, save, & run silver transformation on raw data as well as include error handling
+# delete global execution outside functions

@@ -3,14 +3,13 @@ from pathlib import Path
 
 from src.utils.logger import logger
 
-logger.info("Gold transformation started")
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 SILVER_DIR = BASE_DIR / "data" / "silver"
 file_path =  SILVER_DIR / "transformed_data_2526.parquet"
 gold_data_dir = BASE_DIR / "data" / "gold"
 
-def load_silver_data(file_path: Path):
+def load_silver_data(file_path: Path) -> pd.DataFrame:
     """
     Loads the silver-layer dataset from a parquet file.
 
@@ -42,12 +41,9 @@ def load_silver_data(file_path: Path):
     return df
 
 
-df = load_silver_data(file_path)
-
-required_columns = []
 
 
-def validate_column(df, required_columns):
+def validate_column(df: pd.DataFrame, required_columns: list) -> None:
     '''
     Validates that all required columns exist in the input DataFrame before any transformation is applied.
 
@@ -75,7 +71,7 @@ def validate_column(df, required_columns):
 
 
 
-def league_standings(df):
+def league_standings(df: pd.DataFrame) -> pd.DataFrame:
     """
     Generates a league table from match-level football data.
 
@@ -92,7 +88,8 @@ def league_standings(df):
     """
     logger.info("Starting league standings computation from match data")
 
-    required_columns
+    required_columns = ['HomeTeam', 'AwayTeam', 'HomePoints', 'AwayPoints', 'FTHG','FTAG']
+    validate_column(df, required_columns)
 
     home_standings = df.groupby('HomeTeam').agg(
         Points=('HomePoints', 'sum'),
@@ -119,78 +116,81 @@ def league_standings(df):
     return total_standings
 
 
-league_table = league_standings(df)
 
+def home_away_performance(df:pd.DataFrame, venue: str= "home") -> pd.DataFrame:
+    """
+    Computes team performance metrics for either home or away matches.
 
-def home_performance(df):
-    '''
-    Calculates the performance of a team based on its home matches.
+    The function dynamically selects relevant match columns based on the
+    specified venue and aggregates team-level statistics such as wins,
+    draws, losses, goals scored, defensive records, and disciplinary metrics.
+    The output is sorted by overall performance ranking.
+
     Args:
-        df (pd.DataFrame): The transformed football data.
-    Returns:
-        pd.DataFrame: The home performance metrics including wins, draws, losses, and clean sheets.
-    '''
-    logger.info("Calculating home performance metrics")
+        df (pd.DataFrame): Cleaned football match dataset containing match
+            outcomes and performance-related fields.
+        venue (str): Match context to analyze. Must be either 'home' or 'away'.
 
-    home_perf_df = df.groupby('HomeTeam').agg(
-        Wins=('HomePoints', lambda x: (x == 3).sum()),
-        Draws=('HomePoints', lambda x: (x == 1).sum()),
-        Losses=('HomePoints', lambda x: (x == 0).sum()),
-        CleanSheets=('HomeCleanSheet', 'sum'),
-        Corners=('HC', 'sum'),
-        GoalsScored=('FTHG', 'sum'),
-        YellowCards=('HY', 'sum'),
-        RedCards=('HR', 'sum')
+    Returns:
+        pd.DataFrame: Aggregated team performance table sorted by points,
+        wins, and draws.
+    """
+
+    logger.info(f"Starting {venue} performance computation")
+
+    if venue not in ["home", "away"]:
+        logger.error(f"Invalid venue provided: {venue}")
+        raise ValueError("venue must be either 'home' or 'away'")
+    
+    config = {
+        "home": {
+            "team": "HomeTeam",
+            "points": "HomePoints",
+            "clean_sheet": "HomeCleanSheet",
+            "corners": "HC",
+            "goals_scored": "FTHG",
+            "yellow_cards": "HY",
+            "red_cards": "HR"
+        },
+        "away": {
+            "team": "AwayTeam",
+            "points": "AwayPoints",
+            "clean_sheet": "AwayCleanSheet",
+            "corners": "AC",
+            "goals_scored": "FTAG",
+            "yellow_cards": "AY",
+            "red_cards": "AR"
+        }
+    }
+
+    cols = config[venue]
+
+    required_columns = list(cols.values())
+    validate_column(df, required_columns)
+
+    logger.info(f"Aggregating {venue} stats by {cols['team']}")
+
+    perf_df = df.groupby(cols['team']).agg(
+        Wins=(cols['points'], lambda x: (x == 3).sum()),
+        Draws=(cols['points'], lambda x: (x == 1).sum()),
+        Losses=(cols['points'], lambda x: (x == 0).sum()),
+        CleanSheets=(cols['clean_sheet'], 'sum'),
+        Corners=(cols['corners'], 'sum'),
+        GoalsScored=(cols['goals_scored'], 'sum'),
+        YellowCards=(cols['yellow_cards'], 'sum'),
+        RedCards=(cols['red_cards'], 'sum')
     )
     
-    home_perf_df['HomeTeam'] = home_perf_df.index
-    home_perf_df = home_perf_df.sort_values(by=['Wins', 'Draws'], ascending=False).reset_index(drop=True)
-    home_perf_df.index = range(1, len(home_perf_df) + 1)
-    home_perf_df['Points'] = (home_perf_df['Wins'] * 3) + (home_perf_df['Draws'] * 1)
-    home_perf_df = home_perf_df[['HomeTeam', 'Points', 'Wins', 'Draws', 'Losses', 'CleanSheets', 'Corners', 'GoalsScored', 'YellowCards', 'RedCards']]
+    perf_df['Points'] = (perf_df['Wins'] * 3) + (perf_df['Draws'] * 1)
+    perf_df = perf_df.sort_values(by=['Points', 'Wins', 'Draws'], ascending=False).reset_index()
+    perf_df = perf_df[[cols['team'], 'Points', 'Wins', 'Draws', 'Losses', 'CleanSheets', 'Corners', 'GoalsScored', 'YellowCards', 'RedCards']]
 
-    logger.info("Home performance metrics calculated succesfully")
-    return home_perf_df
-
-
-league_home_performance = home_performance(df)
-
-
-def away_performance(df):
-    '''
-    Calculates the performance of a team based on its away matches.
-    Args:
-        df (pd.DataFrame): The transformed football data.
-    Returns:
-        pd.DataFrame: The away performance metrics including wins, draws, losses, and clean sheets.
-    '''
-    logger.info("Calculating away performance metrics")
-
-    away_perf_df = df.groupby('AwayTeam').agg(
-        Wins=('AwayPoints', lambda x: (x == 3).sum()),
-        Draws=('AwayPoints', lambda x: (x == 1).sum()),
-        Losses=('AwayPoints', lambda x: (x == 0).sum()),
-        CleanSheets=('AwayCleanSheet', 'sum'),
-        Corners=('AC', 'sum'),
-        GoalsScored=('FTAG', 'sum'),
-        YellowCards=('AY', 'sum'),
-        RedCards=('AR', 'sum')
-    )
-    
-    away_perf_df['AwayTeam'] = away_perf_df.index
-    away_perf_df = away_perf_df.sort_values(by=['Wins', 'Draws'], ascending=False).reset_index(drop=True)
-    away_perf_df.index = range(1, len(away_perf_df) + 1)
-    away_perf_df['Points'] = (away_perf_df['Wins'] * 3) + (away_perf_df['Draws'] * 1)
-    away_perf_df = away_perf_df[['AwayTeam', 'Points', 'Wins', 'Draws', 'Losses', 'CleanSheets', 'Corners', 'GoalsScored', 'YellowCards', 'RedCards']]
-
-    logger.info("Away performance metrics calculated succesfully")
-    return away_perf_df
-
-league_away_performance = away_performance(df)
+    logger.info(f"{venue.capitalize()} performance computation completed successfully")
+    return perf_df
 
 
 
-def monthly_performance(df, month):
+def monthly_performance(df: pd.DataFrame, month: int) -> pd.DataFrame:
     '''
     Calculate the performance of a team on a monthly bases.
     Args:
@@ -199,24 +199,81 @@ def monthly_performance(df, month):
     Returns:
         pd.DataFrame: The performance of the team in a given month.
     '''
-    logger.info("Calculating monthly performance metric")
+    logger.info(f"Calculating monthly performance metric for {len(df)} rows")
+
+    if month not in range(1, 13):
+        raise ValueError("Month value must be between 1 and 12")
+
+    required_columns = ['Date']
+    validate_column(df, required_columns)
 
     month_df = df[df['Date'].dt.month == month]
 
-    hp = home_performance(month_df).set_index('HomeTeam')
-    ap = away_performance(month_df).set_index('AwayTeam')
+    if month_df.empty:
+        logger.warning(f"No matches found for month {month}")
+        return pd.DataFrame()
+
+    hp_df = home_away_performance(month_df, 'home').set_index('HomeTeam')
+    ap_df = home_away_performance(month_df, 'away').set_index('AwayTeam')
     
-    monthly_perf_df = hp.add(ap, fill_value=0)
-    monthly_perf_df = monthly_perf_df.sort_values(by=['Wins', 'Draws'], ascending=False).reset_index()
+    monthly_perf_df = hp_df.add(ap_df, fill_value=0)
     monthly_perf_df['Points'] = (monthly_perf_df['Wins'] * 3) + (monthly_perf_df['Draws'] * 1)
+    monthly_perf_df = monthly_perf_df.sort_values(by=['Points', 'Wins', 'Draws'], ascending=False).reset_index()
     monthly_perf_df = monthly_perf_df[['HomeTeam', 'Wins', 'Draws', 'Losses', 'Points']].rename(columns={'HomeTeam': 'Team'})
     monthly_perf_df.index = range(1, len(monthly_perf_df) + 1)
 
-    logger.info("Monthly performance metrics calculated succesfully")
+    logger.info(f"Monthly performance metrics calculated successfully for {len(monthly_perf_df)} teams")
     return monthly_perf_df
 
-august_performance = monthly_performance(df, 8)
 
-# Task 1: merge home performance and away performance 
-# Task 2: input required columns and call validate_column() function
 
+def save_gold_transformation(df, file_name):
+
+    try:
+        if df.empty:
+            logger.warning(f"{file_name} is empty. Saving empty dataset")
+
+        gold_data_dir.mkdir(parents=True, exist_ok=True)
+
+        file_path = gold_data_dir / file_name
+
+        df.to_csv(file_path, index=False)
+
+        logger.info(f"Saved {file_name} successfully for {len(df)} rows")
+
+    except Exception:
+        logger.exception(f"Failure to save gold output for {file_name}")
+        raise
+
+
+
+def run_gold_transformation():
+    logger.info("Gold transformation started")
+
+    df = load_silver_data(file_path)
+
+    league_table = league_standings(df)
+    home_stats = home_away_performance(df, "home")
+    away_stats = home_away_performance(df, 'away')
+    august_month_stats = monthly_performance(df, 8)
+
+    gold_outputs = {
+        'league_table.csv': league_table,
+        'home_stats.csv': home_stats,
+        'away_stats.csv': away_stats,
+        'august_month_stats.csv': august_month_stats
+    }
+
+    for file_name, output_df in gold_outputs.items():
+        save_gold_transformation(output_df, file_name)
+    
+    logger.info(f"Gold transformation saved successfully. "
+                f"{len(output_df)} gold outputs generated")
+
+if __name__ == "__main__":
+    run_gold_transformation()
+
+
+# commits
+# defined function to save & run gold transformations, also define a function to replace two similar functions
+# deleted two similar functions and global execution outside defined functions
