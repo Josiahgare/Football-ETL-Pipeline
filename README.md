@@ -23,9 +23,13 @@ This project involves:
 ### Project development
 
 Phase 1: Project structure -completed
+
 Phase 2: Write configuration and logging script -completed
+
 Phase 3: Write extraction and transformation script -completed
+
 Phase 4: Initialize Git, commit, and push -continuous
+
 Phase 5: Testing --in development
 
 ---
