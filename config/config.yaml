@@ -1,7 +1,13 @@
 source:
-  url: "https://raw.githubusercontent.com/datasets/football-datasets/main/datasets/premier-league/season-2526.csv"
-  format: csv
-  delimiter: ","
-  header: true
-  encoding: utf-8
+    url: "https://raw.githubusercontent.com/datasets/football-datasets/main/datasets/premier-league/season-2526.csv"
+    format: csv
+    delimiter: ","
+    header: true
+    encoding: utf-8
   
+output:
+    raw_file_name: "raw_data_2526.parquet"
+    silver_file_name: "transformed_data_2526.parquet"
+
+# commits
+# added output section for file names of different layers
